@@ -1,5 +1,4 @@
--- // Delta Mobil – MM2 ESP + Silent Aim (Tap Ateş – Sürükleme Düzeltmesi)
--- // Silah: "Gun", Remote: "Shoot", Argüman: Hedef Pozisyonu (Vector3)
+-- // Delta Mobil – MM2 ESP + Silent Aim (Buton Tamiri)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
@@ -167,10 +166,8 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // SILENT AIM (Tek Atış, "Shoot" Remote)
+-- // SILENT AIM
 -- ////////////////////////////////////////////////
-local aimButton = nil
-
 local function getClosestMurderer()
     local best = nil
     local bestDist = cfg.aim_maxDist
@@ -200,7 +197,7 @@ local function shootAtTarget(targetPlayer)
     local myChar = LocalPlayer.Character
     if not myChar then return end
 
-    -- Silahı bul (elde veya sırtta)
+    -- Silahı bul
     local tool = nil
     for _, child in ipairs(myChar:GetChildren()) do
         if child:IsA("Tool") and child.Name == "Gun" then
@@ -221,23 +218,22 @@ local function shootAtTarget(targetPlayer)
     end
     if not tool then return end
 
-    -- "Shoot" Remote'unu bul
     local remote = tool:FindFirstChild("Shoot")
     if not remote or not remote:IsA("RemoteEvent") then return end
 
-    -- Hedef pozisyonu
     local targetChar = targetPlayer.Character
     if not targetChar then return end
     local head = targetChar:FindFirstChild("Head")
     local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
 
-    -- Ateş et (kamera oynamaz)
     remote:FireServer(targetPos)
 end
 
 -- ////////////////////////////////////////////////
--- // MOBİL BUTON (MouseButton1Click tabanlı, Sürüklenebilir)
+-- // BUTON (InputBegan/InputEnded, tap algılama)
 -- ////////////////////////////////////////////////
+local aimButton = nil
+
 local function createAimButton()
     if aimButton then aimButton:Destroy() end
 
@@ -245,6 +241,7 @@ local function createAimButton()
     gui.Name = "AimButtonGui"
     gui.Parent = game.CoreGui or LocalPlayer:WaitForChild("PlayerGui")
     gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 90, 0, 90)
@@ -255,53 +252,62 @@ local function createAimButton()
     btn.TextColor3 = Color3.new(1,1,1)
     btn.Font = Enum.Font.SourceSansBold
     btn.TextSize = 36
+    btn.Active = true  -- Input alabilmesi için şart
     btn.Parent = gui
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
 
-    -- Sürükleme verileri
-    local dragStartPos = nil
+    -- Sürükleme / tap verileri
+    local touchStartTime = 0
+    local touchStartPos = Vector2.new(0,0)
     local startBtnPos = nil
-    local isDragging = false
+    local moved = false
 
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragStartPos = input.Position
+            touchStartTime = tick()
+            touchStartPos = input.Position
             startBtnPos = btn.Position
-            isDragging = false
+            moved = false
         end
     end)
 
     btn.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragStartPos then
-            local delta = input.Position - dragStartPos
-            if delta.Magnitude > 8 then -- 8 pikselden fazla sürüklendiyse taşıma modu
-                isDragging = true
-                btn.Position = UDim2.new(startBtnPos.X.Scale, startBtnPos.X.Offset + delta.X, startBtnPos.Y.Scale, startBtnPos.Y.Offset + delta.Y)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            if startBtnPos then
+                local delta = input.Position - touchStartPos
+                if delta.Magnitude > 5 then  -- 5 piksel sürüklenme eşiği
+                    moved = true
+                    btn.Position = UDim2.new(
+                        startBtnPos.X.Scale,
+                        startBtnPos.X.Offset + delta.X,
+                        startBtnPos.Y.Scale,
+                        startBtnPos.Y.Offset + delta.Y
+                    )
+                end
             end
         end
     end)
 
     btn.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragStartPos = nil
-            startBtnPos = nil
-        end
-    end)
-
-    -- Ateş etme: Sadece sürükleme olmadıysa ve tıklandıysa (MouseButton1Click)
-    btn.MouseButton1Click:Connect(function()
-        if not isDragging then
-            if cfg.aim_on then
-                local myRole = getPlayerRole(LocalPlayer)
-                if myRole ~= "Murderer" then
-                    local target = getClosestMurderer()
-                    if target then
-                        shootAtTarget(target)
+            local duration = tick() - touchStartTime
+            if not moved and duration < 0.4 then  -- 0.4 saniyeden kısa ve sürükleme yoksa TAP
+                if cfg.aim_on then
+                    local myRole = getPlayerRole(LocalPlayer)
+                    if myRole ~= "Murderer" then
+                        local target = getClosestMurderer()
+                        if target then
+                            shootAtTarget(target)
+                        end
                     end
                 end
             end
+            -- sıfırla
+            touchStartTime = 0
+            touchStartPos = Vector2.new(0,0)
+            startBtnPos = nil
+            moved = false
         end
-        isDragging = false -- tık sonrası sıfırla
     end)
 
     aimButton = btn
@@ -391,4 +397,4 @@ RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("✅ MM2 ESP + Silent Aim (Buton düzeltildi) hazır! 🎯 butonuna tek tıkla ateş et.")
+print("✅ MM2 ESP + Silent Aim hazır. 🎯 butonuna dokunup bırak, ateş etsin!")
