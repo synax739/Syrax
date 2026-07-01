@@ -1,4 +1,4 @@
--- // Delta Mobil – MM2 ESP + Oyun İçi Ateşle Silent Aim (Butonsuz, Kendi Ateşini Kullan)
+-- // Delta Mobil – MM2 ESP + Sürekli Aimbot (Butonsuz, Kamerayı ve RootPart'ı Kilitler)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
@@ -166,7 +166,7 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // SILENT AIM (Oyuncu normal ateş ettiğinde otomatik yönlendirme)
+-- // AIMBOT (Sürekli, kamera + karakter dönüşü)
 -- ////////////////////////////////////////////////
 local function getClosestMurderer()
     local best = nil
@@ -193,75 +193,35 @@ local function getClosestMurderer()
     return best
 end
 
-local function hookWeaponRemote()
+local function updateAimbot()
+    if not cfg.aim_on then return end
+
+    local myRole = getPlayerRole(LocalPlayer)
+    if myRole == "Murderer" then return end  -- Katil aimbot kullanmasın
+
+    local target = getClosestMurderer()
+    if not target or not target.Character then return end
+
+    local targetChar = target.Character
+    local head = targetChar:FindFirstChild("Head")
+    local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
+    local camPos = Camera.CFrame.Position
+
+    -- Kamera kilidi (yumuşak)
+    local lookAtCFrame = CFrame.lookAt(camPos, targetPos)
+    Camera.CFrame = Camera.CFrame:Lerp(lookAtCFrame, 0.3)  -- yumuşak geçiş
+
+    -- Karakter RootPart'ını yatay olarak hedefe döndür
     local myChar = LocalPlayer.Character
-    if not myChar then return end
-
-    -- Silahı bul
-    local tool = nil
-    for _, child in ipairs(myChar:GetChildren()) do
-        if child:IsA("Tool") and child.Name == "Gun" then
-            tool = child
-            break
-        end
-    end
-    if not tool then
-        local backpack = LocalPlayer:FindFirstChild("Backpack")
-        if backpack then
-            for _, child in ipairs(backpack:GetChildren()) do
-                if child:IsA("Tool") and child.Name == "Gun" then
-                    tool = child
-                    break
-                end
-            end
-        end
-    end
-    if not tool then return end
-
-    local remote = tool:FindFirstChild("Shoot")
-    if not remote or not remote:IsA("RemoteEvent") then return end
-
-    -- Eğer daha önce hooklandıysa tekrar etme
-    if remote:GetAttribute("HookedForAimbot") then return end
-    remote:SetAttribute("HookedForAimbot", true)
-
-    local oldFireServer = remote.FireServer
-    remote.FireServer = function(self, ...)
-        local args = {...}
-        -- Eğer aimbot açıksa ve şerifsek, hedef pozisyonunu değiştir
-        if cfg.aim_on then
-            local myRole = getPlayerRole(LocalPlayer)
-            if myRole ~= "Murderer" then
-                local target = getClosestMurderer()
-                if target and target.Character then
-                    local head = target.Character:FindFirstChild("Head")
-                    local targetPos = head and head.Position or target.Character.HumanoidRootPart.Position
-                    -- Genelde ilk argüman hedef pozisyonudur
-                    if #args >= 1 and typeof(args[1]) == "Vector3" then
-                        args[1] = targetPos
-                    end
-                end
-            end
-        end
-        return oldFireServer(self, unpack(args))
+    if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+        local root = myChar.HumanoidRootPart
+        local flatTarget = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)  -- aynı yükseklikte
+        local rootLookAt = CFrame.lookAt(root.Position, flatTarget)
+        pcall(function()
+            root.CFrame = root.CFrame:Lerp(rootLookAt, 0.4)
+        end)
     end
 end
-
--- Her karakter değiştiğinde yeniden hookla
-LocalPlayer.CharacterAdded:Connect(function(char)
-    -- Biraz bekle, silahın yüklenmesi için
-    task.wait(1)
-    hookWeaponRemote()
-end)
-
--- Periyodik olarak kontrol et (silah sonradan alınabilir)
-task.spawn(function()
-    while task.wait(2) do
-        if cfg.aim_on then
-            hookWeaponRemote()
-        end
-    end
-end)
 
 -- ////////////////////////////////////////////////
 -- // MENÜ
@@ -294,7 +254,7 @@ local function createMenu()
     local title = Instance.new("TextLabel", frame)
     title.Size = UDim2.new(1, 0, 0, 25)
     title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    title.Text = "MM2 Oto Aimbot"
+    title.Text = "MM2 Aimbot"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
 
@@ -319,12 +279,7 @@ local function createMenu()
     end
 
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
-    addToggle("Aimbot (Oto)", cfg.aim_on, function(v)
-        cfg.aim_on = v
-        if v then
-            hookWeaponRemote()
-        end
-    end)
+    addToggle("Aimbot (Kilit)", cfg.aim_on, function(v) cfg.aim_on = v end)
     addToggle("Takım Kontrol", cfg.team_check, function(v) cfg.team_check = v end)
 
     openBtn.MouseButton1Click:Connect(function()
@@ -346,6 +301,7 @@ createMenu()
 
 RunService.RenderStepped:Connect(function()
     updateESP()
+    updateAimbot()
 end)
 
-print("✅ MM2 ESP + Oto Silent Aim hazır! Aimbot'u aç, normal şekilde ateş et, mermi katile gitsin.")
+print("✅ MM2 ESP + Sürekli Aimbot hazır. Menüden aç, kamera direkt katile kitlensin.")
