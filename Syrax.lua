@@ -1,4 +1,4 @@
--- // Delta Mobil – MM2 ESP + Silent Aim (Gerçek Çalışan)
+-- // Delta Mobil – MM2 ESP + Silent Aim (Tap Ateş – Sürükleme Düzeltmesi)
 -- // Silah: "Gun", Remote: "Shoot", Argüman: Hedef Pozisyonu (Vector3)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -231,12 +231,12 @@ local function shootAtTarget(targetPlayer)
     local head = targetChar:FindFirstChild("Head")
     local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
 
-    -- Kamerayı oynatmadan doğrudan Remote'e hedef pozisyonunu gönder
+    -- Ateş et (kamera oynamaz)
     remote:FireServer(targetPos)
 end
 
 -- ////////////////////////////////////////////////
--- // MOBİL BUTON (Tap algılamalı)
+-- // MOBİL BUTON (MouseButton1Click tabanlı, Sürüklenebilir)
 -- ////////////////////////////////////////////////
 local function createAimButton()
     if aimButton then aimButton:Destroy() end
@@ -258,24 +258,23 @@ local function createAimButton()
     btn.Parent = gui
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
 
-    local touchStartTime = 0
-    local touchStartPos = nil
-    local isDragging = false
+    -- Sürükleme verileri
+    local dragStartPos = nil
     local startBtnPos = nil
+    local isDragging = false
 
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            touchStartTime = tick()
-            touchStartPos = input.Position
+            dragStartPos = input.Position
             startBtnPos = btn.Position
             isDragging = false
         end
     end)
 
     btn.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and touchStartPos then
-            local delta = input.Position - touchStartPos
-            if delta.Magnitude > 10 then
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragStartPos then
+            local delta = input.Position - dragStartPos
+            if delta.Magnitude > 8 then -- 8 pikselden fazla sürüklendiyse taşıma modu
                 isDragging = true
                 btn.Position = UDim2.new(startBtnPos.X.Scale, startBtnPos.X.Offset + delta.X, startBtnPos.Y.Scale, startBtnPos.Y.Offset + delta.Y)
             end
@@ -284,22 +283,25 @@ local function createAimButton()
 
     btn.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local duration = tick() - touchStartTime
-            if not isDragging and duration < 0.3 then
-                if cfg.aim_on then
-                    local myRole = getPlayerRole(LocalPlayer)
-                    if myRole ~= "Murderer" then
-                        local target = getClosestMurderer()
-                        if target then
-                            shootAtTarget(target)
-                        end
+            dragStartPos = nil
+            startBtnPos = nil
+        end
+    end)
+
+    -- Ateş etme: Sadece sürükleme olmadıysa ve tıklandıysa (MouseButton1Click)
+    btn.MouseButton1Click:Connect(function()
+        if not isDragging then
+            if cfg.aim_on then
+                local myRole = getPlayerRole(LocalPlayer)
+                if myRole ~= "Murderer" then
+                    local target = getClosestMurderer()
+                    if target then
+                        shootAtTarget(target)
                     end
                 end
             end
-            touchStartTime = 0
-            touchStartPos = nil
-            isDragging = false
         end
+        isDragging = false -- tık sonrası sıfırla
     end)
 
     aimButton = btn
@@ -389,4 +391,4 @@ RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("🎯 MM2 ESP + Silent Aim (Shoot Remote) aktif! 🎯 butonuna dokun, mermi katile gitsin.")
+print("✅ MM2 ESP + Silent Aim (Buton düzeltildi) hazır! 🎯 butonuna tek tıkla ateş et.")
