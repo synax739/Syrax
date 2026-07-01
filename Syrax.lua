@@ -1,10 +1,6 @@
--- // Delta Mobil – MM2 ESP + Silent Aim (Kamera sabit, mermi katile)
--- // "Aimbot" menüden açılır, ekrandaki butona basınca mermi en yakın katile yönlenir.
--- // Anti-ban: rastgele yenileme, obfuscated değişkenler.
-
+-- // Delta Mobil – MM2 ESP + Silent Aim (Butona tek basışta ateş, mermi katile)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -17,7 +13,6 @@ local cfg = {
     esp_hp = false,
     esp_maxDist = 500,
     aim_on = false,
-    aim_key = "MouseButton1", -- buton yerine ekrandaki buton kullanılacak
     aim_maxDist = 120,
     team_check = true
 }
@@ -31,7 +26,7 @@ local ROLE_COLORS = {
 }
 
 -- ////////////////////////////////////////////////
--- // MM2 Rol Tespiti (aynı)
+-- // MM2 Rol Tespiti
 -- ////////////////////////////////////////////////
 local function getPlayerRole(plr)
     local char = plr.Character
@@ -60,7 +55,7 @@ local function getPlayerRole(plr)
 end
 
 -- ////////////////////////////////////////////////
--- // ESP SİSTEMİ (aynı)
+-- // ESP SİSTEMİ (Stabil Drawing)
 -- ////////////////////////////////////////////////
 local ESPData = {}
 
@@ -172,14 +167,11 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // SILENT AIM (Mermi Yönlendirme)
+-- // SILENT AIM (Tek atış, kamera sabit)
 -- ////////////////////////////////////////////////
 local aimButton = nil
-local isAimButtonHeld = false
-local hookedRemote = nil
-local originalFireServer = nil
 
--- En yakın katili bul (kamera pozisyonuna göre değil, karaktere göre)
+-- En yakın katili bul
 local function getClosestMurderer()
     local best = nil
     local bestDist = cfg.aim_maxDist
@@ -205,91 +197,58 @@ local function getClosestMurderer()
     return best
 end
 
--- Ateşleme eventini bul ve hookla
-local function setupSilentAim()
-    -- Yaygın MM2 remote isimleri
-    local possibleNames = {"Fire", "Shoot", "GunFire", "FireServer", "ShootServer", "PistolFire", "RevolverFire"}
-    
-    local function searchRemote(parent)
-        for _, child in ipairs(parent:GetChildren()) do
-            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                for _, name in ipairs(possibleNames) do
-                    if child.Name == name then
-                        return child
-                    end
+-- Silahı bul ve ateşle, hedef pozisyonunu ilet
+local function fireAtTarget(targetPlayer)
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+
+    -- Önce karakterdeki silahları tara (eldeki)
+    local tool = nil
+    for _, child in ipairs(myChar:GetChildren()) do
+        if child:IsA("Tool") and (child.Name:lower():find("gun") or child.Name:lower():find("pistol") or child.Name:lower():find("revolver") or child.Name:lower():find("sheriff")) then
+            tool = child
+            break
+        end
+    end
+    -- Elde yoksa backpack'e bak
+    if not tool then
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if backpack then
+            for _, child in ipairs(backpack:GetChildren()) do
+                if child:IsA("Tool") and (child.Name:lower():find("gun") or child.Name:lower():find("pistol") or child.Name:lower():find("revolver") or child.Name:lower():find("sheriff")) then
+                    tool = child
+                    break
                 end
             end
-            local found = searchRemote(child)
-            if found then return found end
         end
-        return nil
     end
 
-    local remote = searchRemote(workspace) or searchRemote(game:GetService("ReplicatedStorage"))
-    if not remote then return false end
+    if not tool then return end
 
-    -- Eğer RemoteFunction ise argümanları değiştir
-    if remote:IsA("RemoteFunction") then
-        local oldInvoke = remote.OnClientInvoke
-        remote.OnClientInvoke = function(...)
-            if isAimButtonHeld then
-                local target = getClosestMurderer()
-                if target and target.Character then
-                    local head = target.Character:FindFirstChild("Head")
-                    local targetPos = head and head.Position or target.Character.HumanoidRootPart.Position
-                    -- Argümanları değiştir: genelde ilk argüman hedef pozisyonudur
-                    local args = {...}
-                    args[1] = targetPos -- veya uygun sırayı dene
-                    return oldInvoke(unpack(args))
-                end
-            end
-            return oldInvoke(...)
-        end
-        hookedRemote = remote
-        return true
-    end
+    -- Hedef pozisyon
+    local targetChar = targetPlayer.Character
+    if not targetChar then return end
+    local head = targetChar:FindFirstChild("Head")
+    local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
 
-    -- RemoteEvent ise
-    if remote:IsA("RemoteEvent") then
-        local oldFireServer = remote.FireServer
-        originalFireServer = oldFireServer
-        
-        remote.FireServer = function(self, ...)
-            local args = {...}
-            if isAimButtonHeld and #args >= 1 then
-                local target = getClosestMurderer()
-                if target and target.Character then
-                    local head = target.Character:FindFirstChild("Head")
-                    local targetPos = head and head.Position or target.Character.HumanoidRootPart.Position
-                    -- Genelde ilk argüman fare pozisyonu veya hedef pozisyonudur
-                    args[1] = targetPos -- pozisyon bekleniyorsa
-                    -- Eğer args[1] bir Vector3 değilse, uygun index'i bulmak gerekebilir
-                end
-            end
-            return oldFireServer(self, unpack(args))
-        end
-        hookedRemote = remote
-        return true
-    end
-
-    return false
-end
-
--- Temizlik
-local function cleanupSilentAim()
-    if hookedRemote then
-        if hookedRemote:IsA("RemoteFunction") then
-            hookedRemote.OnClientInvoke = nil
-        elseif hookedRemote:IsA("RemoteEvent") and originalFireServer then
-            hookedRemote.FireServer = originalFireServer
-        end
-        hookedRemote = nil
-        originalFireServer = nil
+    -- Ateşleme için Remote bul
+    local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
+    if remote and remote:IsA("RemoteEvent") then
+        -- Mesafeyi ve yönü hesapla
+        local myPos = myChar.HumanoidRootPart.Position
+        local direction = (targetPos - myPos).Unit
+        -- Genelde argümanlar: hedef pozisyonu, fare pozisyonu vb.
+        remote:FireServer(targetPos, direction)
+    else
+        -- Remote yoksa tool'u doğrudan kullanmayı dene
+        pcall(function()
+            tool:Activate()
+        end)
     end
 end
 
 -- ////////////////////////////////////////////////
--- // MOBİL BUTON (Silent Aim için)
+-- // MOBİL BUTON (Tek tıklama ile ateş)
 -- ////////////////////////////////////////////////
 local function createAimButton()
     if aimButton then aimButton:Destroy() end
@@ -318,9 +277,6 @@ local function createAimButton()
 
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if cfg.aim_on then
-                isAimButtonHeld = true
-            end
             dragging = true
             dragStart = input.Position
             startPos = btn.Position
@@ -329,7 +285,6 @@ local function createAimButton()
 
     btn.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            isAimButtonHeld = false
             dragging = false
         end
     end)
@@ -338,6 +293,17 @@ local function createAimButton()
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             btn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- Sadece tam tıklamada (bas-bırak) ateş et
+    btn.MouseButton1Click:Connect(function()
+        if not cfg.aim_on then return end
+        local myRole = getPlayerRole(LocalPlayer)
+        if myRole == "Murderer" then return end  -- Katil ateş edemez
+        local target = getClosestMurderer()
+        if target then
+            fireAtTarget(target)
         end
     end)
 
@@ -402,17 +368,7 @@ local function createMenu()
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
     addToggle("Silent Aim", cfg.aim_on, function(v)
         cfg.aim_on = v
-        if not v then
-            isAimButtonHeld = false
-            cleanupSilentAim()
-            if aimButton then aimButton.Visible = false end
-        else
-            local ok = setupSilentAim()
-            if not ok then
-                print("Silent aim Remote bulunamadı, oyun güncellenmiş olabilir.")
-            end
-            if aimButton then aimButton.Visible = true end
-        end
+        if aimButton then aimButton.Visible = v end
     end)
     addToggle("Takım Kontrol", cfg.team_check, function(v) cfg.team_check = v end)
 
@@ -422,7 +378,7 @@ local function createMenu()
 end
 
 -- ////////////////////////////////////////////////
--- // BAŞLATMA
+-- // TEMİZLİK VE BAŞLATMA
 -- ////////////////////////////////////////////////
 Players.PlayerRemoving:Connect(function(p) removeESP(p) end)
 Players.PlayerAdded:Connect(function(p)
@@ -434,13 +390,8 @@ end)
 createMenu()
 createAimButton()
 
--- Aimbot açıksa hemen hook'u kur
-if cfg.aim_on then
-    setupSilentAim()
-end
-
 RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("🎯 Silent Aim hazır! Menüden 'Silent Aim'i aç, butona bas, mermiler katile gitsin.")
+print("🎯 MM2 ESP + Tek Atış Silent Aim hazır! Butona her basışta tek mermi katile gider.")
