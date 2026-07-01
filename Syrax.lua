@@ -1,6 +1,7 @@
--- // Delta Mobil – MM2 ESP + Silent Aim (Butona tek basışta ateş, mermi katile)
+-- // Delta Mobil – MM2 ESP + Tap Aimbot (Kamera anlık döner, ateş eder, geri döner)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -10,19 +11,18 @@ local cfg = {
     esp_box = true,
     esp_name = false,
     esp_dist = false,
-    esp_hp = false,
     esp_maxDist = 500,
     aim_on = false,
     aim_maxDist = 120,
-    team_check = true
+    team_check = false  -- artık kapalı, tüm rolleri göster
 }
 
--- Rol renkleri
+-- Rol renkleri (tümü için)
 local ROLE_COLORS = {
     Murderer = Color3.fromRGB(255, 0, 0),
-    Sheriff   = Color3.fromRGB(0, 120, 255),
-    Innocent  = Color3.fromRGB(0, 255, 0),
-    Unknown   = Color3.fromRGB(255, 255, 0)
+    Sheriff  = Color3.fromRGB(0, 120, 255),
+    Innocent = Color3.fromRGB(0, 255, 0),
+    Unknown  = Color3.fromRGB(255, 255, 0)
 }
 
 -- ////////////////////////////////////////////////
@@ -55,7 +55,7 @@ local function getPlayerRole(plr)
 end
 
 -- ////////////////////////////////////////////////
--- // ESP SİSTEMİ (Stabil Drawing)
+-- // ESP SİSTEMİ (Tüm oyuncular)
 -- ////////////////////////////////////////////////
 local ESPData = {}
 
@@ -167,7 +167,7 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // SILENT AIM (Tek atış, kamera sabit)
+-- // TAP AIMBOT (kamera anlık döner + ateş eder + geri döner)
 -- ////////////////////////////////////////////////
 local aimButton = nil
 
@@ -197,12 +197,12 @@ local function getClosestMurderer()
     return best
 end
 
--- Silahı bul ve ateşle, hedef pozisyonunu ilet
-local function fireAtTarget(targetPlayer)
+-- Silahı bul ve tek atış yap
+local function shootAtTarget(targetPlayer)
     local myChar = LocalPlayer.Character
     if not myChar then return end
 
-    -- Önce karakterdeki silahları tara (eldeki)
+    -- Silahı bul
     local tool = nil
     for _, child in ipairs(myChar:GetChildren()) do
         if child:IsA("Tool") and (child.Name:lower():find("gun") or child.Name:lower():find("pistol") or child.Name:lower():find("revolver") or child.Name:lower():find("sheriff")) then
@@ -210,7 +210,6 @@ local function fireAtTarget(targetPlayer)
             break
         end
     end
-    -- Elde yoksa backpack'e bak
     if not tool then
         local backpack = LocalPlayer:FindFirstChild("Backpack")
         if backpack then
@@ -222,39 +221,37 @@ local function fireAtTarget(targetPlayer)
             end
         end
     end
-
     if not tool then return end
 
-    -- Hedef pozisyon
+    -- Hedef pozisyonu
     local targetChar = targetPlayer.Character
     if not targetChar then return end
     local head = targetChar:FindFirstChild("Head")
     local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
 
-    -- Ateşleme için Remote bul
+    -- Mevcut kamera durumunu kaydet
+    local oldCFrame = Camera.CFrame
+    -- Kamerayı hedefe çevir
+    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetPos)
+    -- Ateş et (Remote varsa onunla, yoksa Activate)
     local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
     if remote and remote:IsA("RemoteEvent") then
-        -- Mesafeyi ve yönü hesapla
-        local myPos = myChar.HumanoidRootPart.Position
-        local direction = (targetPos - myPos).Unit
-        -- Genelde argümanlar: hedef pozisyonu, fare pozisyonu vb.
-        remote:FireServer(targetPos, direction)
+        remote:FireServer(targetPos)
     else
-        -- Remote yoksa tool'u doğrudan kullanmayı dene
-        pcall(function()
-            tool:Activate()
-        end)
+        pcall(function() tool:Activate() end)
     end
+    -- Kamerayı geri al
+    Camera.CFrame = oldCFrame
 end
 
 -- ////////////////////////////////////////////////
--- // MOBİL BUTON (Tek tıklama ile ateş)
+-- // MOBİL BUTON (Tap algılamalı)
 -- ////////////////////////////////////////////////
 local function createAimButton()
     if aimButton then aimButton:Destroy() end
 
     local gui = Instance.new("ScreenGui")
-    gui.Name = "SilentAimButton"
+    gui.Name = "AimButtonGui"
     gui.Parent = game.CoreGui or game.Players.LocalPlayer:WaitForChild("PlayerGui")
     gui.ResetOnSpawn = false
 
@@ -270,40 +267,49 @@ local function createAimButton()
     btn.Parent = gui
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
 
-    -- Sürüklenebilir
-    local dragging = false
-    local dragStart = nil
-    local startPos = nil
+    -- Sürükleme ve tap ayrımı için değişkenler
+    local touchStartTime = 0
+    local touchStartPos = nil
+    local isDragging = false
+    local startBtnPos = nil
 
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = btn.Position
+            touchStartTime = tick()
+            touchStartPos = input.Position
+            startBtnPos = btn.Position
+            isDragging = false
+        end
+    end)
+
+    btn.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and touchStartPos then
+            local delta = input.Position - touchStartPos
+            if delta.Magnitude > 10 then -- 10 pikselden fazla sürüklendiyse
+                isDragging = true
+                btn.Position = UDim2.new(startBtnPos.X.Scale, startBtnPos.X.Offset + delta.X, startBtnPos.Y.Scale, startBtnPos.Y.Offset + delta.Y)
+            end
         end
     end)
 
     btn.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    btn.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            btn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    -- Sadece tam tıklamada (bas-bırak) ateş et
-    btn.MouseButton1Click:Connect(function()
-        if not cfg.aim_on then return end
-        local myRole = getPlayerRole(LocalPlayer)
-        if myRole == "Murderer" then return end  -- Katil ateş edemez
-        local target = getClosestMurderer()
-        if target then
-            fireAtTarget(target)
+            local duration = tick() - touchStartTime
+            if not isDragging and duration < 0.3 then -- 0.3 saniyeden kısa ve sürükleme yoksa tap say
+                if cfg.aim_on then
+                    local myRole = getPlayerRole(LocalPlayer)
+                    if myRole ~= "Murderer" then
+                        local target = getClosestMurderer()
+                        if target then
+                            shootAtTarget(target)
+                        end
+                    end
+                end
+            end
+            -- Sıfırla
+            touchStartTime = 0
+            touchStartPos = nil
+            isDragging = false
         end
     end)
 
@@ -341,7 +347,7 @@ local function createMenu()
     local title = Instance.new("TextLabel", frame)
     title.Size = UDim2.new(1, 0, 0, 25)
     title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    title.Text = "MM2 Silent Aim"
+    title.Text = "MM2 Hızlı Aimbot"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
 
@@ -366,7 +372,7 @@ local function createMenu()
     end
 
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
-    addToggle("Silent Aim", cfg.aim_on, function(v)
+    addToggle("Aimbot (🎯)", cfg.aim_on, function(v)
         cfg.aim_on = v
         if aimButton then aimButton.Visible = v end
     end)
@@ -394,4 +400,4 @@ RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("🎯 MM2 ESP + Tek Atış Silent Aim hazır! Butona her basışta tek mermi katile gider.")
+print("✅ MM2 ESP (tüm roller) + Hızlı Aimbot hazır! 🎯 butonuna dokun, ateş etsin.")
