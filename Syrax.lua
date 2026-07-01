@@ -1,7 +1,7 @@
--- // Delta Mobil – MM2 ESP + Tap Aimbot (Kamera anlık döner, ateş eder, geri döner)
+-- // Delta Mobil – MM2 ESP + Silent Aim (Gerçek Çalışan)
+-- // Silah: "Gun", Remote: "Shoot", Argüman: Hedef Pozisyonu (Vector3)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -14,10 +14,10 @@ local cfg = {
     esp_maxDist = 500,
     aim_on = false,
     aim_maxDist = 120,
-    team_check = false  -- artık kapalı, tüm rolleri göster
+    team_check = false
 }
 
--- Rol renkleri (tümü için)
+-- Rol renkleri
 local ROLE_COLORS = {
     Murderer = Color3.fromRGB(255, 0, 0),
     Sheriff  = Color3.fromRGB(0, 120, 255),
@@ -55,7 +55,7 @@ local function getPlayerRole(plr)
 end
 
 -- ////////////////////////////////////////////////
--- // ESP SİSTEMİ (Tüm oyuncular)
+-- // ESP SİSTEMİ
 -- ////////////////////////////////////////////////
 local ESPData = {}
 
@@ -167,11 +167,10 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // TAP AIMBOT (kamera anlık döner + ateş eder + geri döner)
+-- // SILENT AIM (Tek Atış, "Shoot" Remote)
 -- ////////////////////////////////////////////////
 local aimButton = nil
 
--- En yakın katili bul
 local function getClosestMurderer()
     local best = nil
     local bestDist = cfg.aim_maxDist
@@ -197,15 +196,14 @@ local function getClosestMurderer()
     return best
 end
 
--- Silahı bul ve tek atış yap
 local function shootAtTarget(targetPlayer)
     local myChar = LocalPlayer.Character
     if not myChar then return end
 
-    -- Silahı bul
+    -- Silahı bul (elde veya sırtta)
     local tool = nil
     for _, child in ipairs(myChar:GetChildren()) do
-        if child:IsA("Tool") and (child.Name:lower():find("gun") or child.Name:lower():find("pistol") or child.Name:lower():find("revolver") or child.Name:lower():find("sheriff")) then
+        if child:IsA("Tool") and child.Name == "Gun" then
             tool = child
             break
         end
@@ -214,7 +212,7 @@ local function shootAtTarget(targetPlayer)
         local backpack = LocalPlayer:FindFirstChild("Backpack")
         if backpack then
             for _, child in ipairs(backpack:GetChildren()) do
-                if child:IsA("Tool") and (child.Name:lower():find("gun") or child.Name:lower():find("pistol") or child.Name:lower():find("revolver") or child.Name:lower():find("sheriff")) then
+                if child:IsA("Tool") and child.Name == "Gun" then
                     tool = child
                     break
                 end
@@ -223,25 +221,18 @@ local function shootAtTarget(targetPlayer)
     end
     if not tool then return end
 
+    -- "Shoot" Remote'unu bul
+    local remote = tool:FindFirstChild("Shoot")
+    if not remote or not remote:IsA("RemoteEvent") then return end
+
     -- Hedef pozisyonu
     local targetChar = targetPlayer.Character
     if not targetChar then return end
     local head = targetChar:FindFirstChild("Head")
     local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
 
-    -- Mevcut kamera durumunu kaydet
-    local oldCFrame = Camera.CFrame
-    -- Kamerayı hedefe çevir
-    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetPos)
-    -- Ateş et (Remote varsa onunla, yoksa Activate)
-    local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
-    if remote and remote:IsA("RemoteEvent") then
-        remote:FireServer(targetPos)
-    else
-        pcall(function() tool:Activate() end)
-    end
-    -- Kamerayı geri al
-    Camera.CFrame = oldCFrame
+    -- Kamerayı oynatmadan doğrudan Remote'e hedef pozisyonunu gönder
+    remote:FireServer(targetPos)
 end
 
 -- ////////////////////////////////////////////////
@@ -252,7 +243,7 @@ local function createAimButton()
 
     local gui = Instance.new("ScreenGui")
     gui.Name = "AimButtonGui"
-    gui.Parent = game.CoreGui or game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    gui.Parent = game.CoreGui or LocalPlayer:WaitForChild("PlayerGui")
     gui.ResetOnSpawn = false
 
     local btn = Instance.new("TextButton")
@@ -267,7 +258,6 @@ local function createAimButton()
     btn.Parent = gui
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
 
-    -- Sürükleme ve tap ayrımı için değişkenler
     local touchStartTime = 0
     local touchStartPos = nil
     local isDragging = false
@@ -285,7 +275,7 @@ local function createAimButton()
     btn.InputChanged:Connect(function(input)
         if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and touchStartPos then
             local delta = input.Position - touchStartPos
-            if delta.Magnitude > 10 then -- 10 pikselden fazla sürüklendiyse
+            if delta.Magnitude > 10 then
                 isDragging = true
                 btn.Position = UDim2.new(startBtnPos.X.Scale, startBtnPos.X.Offset + delta.X, startBtnPos.Y.Scale, startBtnPos.Y.Offset + delta.Y)
             end
@@ -295,7 +285,7 @@ local function createAimButton()
     btn.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
             local duration = tick() - touchStartTime
-            if not isDragging and duration < 0.3 then -- 0.3 saniyeden kısa ve sürükleme yoksa tap say
+            if not isDragging and duration < 0.3 then
                 if cfg.aim_on then
                     local myRole = getPlayerRole(LocalPlayer)
                     if myRole ~= "Murderer" then
@@ -306,7 +296,6 @@ local function createAimButton()
                     end
                 end
             end
-            -- Sıfırla
             touchStartTime = 0
             touchStartPos = nil
             isDragging = false
@@ -322,7 +311,7 @@ end
 local function createMenu()
     local gui = Instance.new("ScreenGui")
     gui.Name = "MM2Menu"
-    gui.Parent = game.CoreGui or game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    gui.Parent = game.CoreGui or LocalPlayer:WaitForChild("PlayerGui")
     gui.ResetOnSpawn = false
 
     local openBtn = Instance.new("TextButton")
@@ -347,7 +336,7 @@ local function createMenu()
     local title = Instance.new("TextLabel", frame)
     title.Size = UDim2.new(1, 0, 0, 25)
     title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    title.Text = "MM2 Hızlı Aimbot"
+    title.Text = "MM2 Silent Aim"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
 
@@ -384,7 +373,7 @@ local function createMenu()
 end
 
 -- ////////////////////////////////////////////////
--- // TEMİZLİK VE BAŞLATMA
+-- // BAŞLATMA
 -- ////////////////////////////////////////////////
 Players.PlayerRemoving:Connect(function(p) removeESP(p) end)
 Players.PlayerAdded:Connect(function(p)
@@ -400,4 +389,4 @@ RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("✅ MM2 ESP (tüm roller) + Hızlı Aimbot hazır! 🎯 butonuna dokun, ateş etsin.")
+print("🎯 MM2 ESP + Silent Aim (Shoot Remote) aktif! 🎯 butonuna dokun, mermi katile gitsin.")
