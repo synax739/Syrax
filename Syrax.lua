@@ -1,4 +1,4 @@
--- // Delta Mobil – MM2 ESP + Göğüs Aimbot (RootPart Hedefli, Daha İsabetli)
+-- // Delta Mobil – MM2 ESP + Akıllı Göğüs Aimbot (Sadece Şerif & Silah Varken)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
@@ -13,6 +13,7 @@ local cfg = {
     esp_maxDist = 500,
     aim_on = false,
     aim_maxDist = 120,
+    aim_smooth = 0.45,  -- 0.3 çok hızlı, 0.5 yavaş, 0.45 ideal
     team_check = false
 }
 
@@ -166,8 +167,30 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // AIMBOT (Göğüs hizası = HumanoidRootPart)
+-- // AIMBOT (Göğüs, Sadece Şerif & Silah Varken)
 -- ////////////////////////////////////////////////
+local function hasGun()
+    local myChar = LocalPlayer.Character
+    if not myChar then return false end
+
+    -- Elde silah var mı?
+    for _, child in ipairs(myChar:GetChildren()) do
+        if child:IsA("Tool") and child.Name == "Gun" then
+            return true
+        end
+    end
+    -- Sırt çantasında var mı?
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") and child.Name == "Gun" then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function getClosestMurderer()
     local best = nil
     local bestDist = cfg.aim_maxDist
@@ -180,12 +203,9 @@ local function getClosestMurderer()
         if getPlayerRole(plr) ~= "Murderer" then continue end
         local char = plr.Character
         if not char then continue end
-        local head = char:FindFirstChild("Head")
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not (head or hrp) then continue end
-        -- Mesafe hesabı için hrp kullan
-        local targetPos = hrp and hrp.Position or head.Position
-        local dist = (myPos - targetPos).Magnitude
+        if not hrp then continue end
+        local dist = (myPos - hrp.Position).Magnitude
         if dist < bestDist then
             bestDist = dist
             best = plr
@@ -197,8 +217,10 @@ end
 local function updateAimbot()
     if not cfg.aim_on then return end
 
+    -- SADECE ŞERİF VE SİLAH VARSA ÇALIŞ
     local myRole = getPlayerRole(LocalPlayer)
-    if myRole == "Murderer" then return end
+    if myRole ~= "Sheriff" then return end
+    if not hasGun() then return end
 
     local target = getClosestMurderer()
     if not target or not target.Character then return end
@@ -207,22 +229,22 @@ local function updateAimbot()
     local hrp = targetChar:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- GÖĞÜS HİZASI: RootPart pozisyonu (tam gövde ortası)
-    local targetPos = hrp.Position + Vector3.new(0, 1, 0)  -- Hafif yukarı, göğüs ortası
+    -- GÖĞÜS HİZASI (daha geniş hedef)
+    local targetPos = hrp.Position + Vector3.new(0, 1, 0)
     local camPos = Camera.CFrame.Position
 
-    -- Kamera kilidi (yumuşak)
+    -- Kamera kilidi (daha hızlı takip)
     local lookAtCFrame = CFrame.lookAt(camPos, targetPos)
-    Camera.CFrame = Camera.CFrame:Lerp(lookAtCFrame, 0.3)
+    Camera.CFrame = Camera.CFrame:Lerp(lookAtCFrame, cfg.aim_smooth)
 
-    -- Karakter RootPart'ını yatay olarak hedefe döndür
+    -- Karakter RootPart yatay dönüşü
     local myChar = LocalPlayer.Character
     if myChar and myChar:FindFirstChild("HumanoidRootPart") then
         local root = myChar.HumanoidRootPart
         local flatTarget = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
         local rootLookAt = CFrame.lookAt(root.Position, flatTarget)
         pcall(function()
-            root.CFrame = root.CFrame:Lerp(rootLookAt, 0.4)
+            root.CFrame = root.CFrame:Lerp(rootLookAt, cfg.aim_smooth)
         end)
     end
 end
@@ -308,4 +330,6 @@ RunService.RenderStepped:Connect(function()
     updateAimbot()
 end)
 
-print("✅ MM2 ESP + Göğüs Aimbot hazır. Menüden 'Aimbot (Göğüs)' seçeneğini aç.")
+print("✅ MM2 ESP + Akıllı Göğüs Aimbot hazır!")
+print("   - Sadece Şerif rolünde ve 'Gun' silahı varken katile kilitlenir.")
+print("   - Masumken veya silahsızken aimbot pasiftir.")
