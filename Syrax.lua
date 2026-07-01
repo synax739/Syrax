@@ -1,7 +1,6 @@
--- // Delta Mobil – MM2 ESP + Dokunma Bölgesi (Buton Sorunu Kesin Çözüm)
+-- // Delta Mobil – MM2 ESP + Oyun İçi Ateşle Silent Aim (Butonsuz, Kendi Ateşini Kullan)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -16,9 +15,6 @@ local cfg = {
     aim_maxDist = 120,
     team_check = false
 }
-
--- Ateş bölgesi (sağ alt köşe)
-local fireZone = nil
 
 -- Rol renkleri
 local ROLE_COLORS = {
@@ -170,7 +166,7 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // SILENT AIM (Doğrudan Remote)
+-- // SILENT AIM (Oyuncu normal ateş ettiğinde otomatik yönlendirme)
 -- ////////////////////////////////////////////////
 local function getClosestMurderer()
     local best = nil
@@ -197,10 +193,11 @@ local function getClosestMurderer()
     return best
 end
 
-local function shootAtTarget(targetPlayer)
+local function hookWeaponRemote()
     local myChar = LocalPlayer.Character
     if not myChar then return end
 
+    -- Silahı bul
     local tool = nil
     for _, child in ipairs(myChar:GetChildren()) do
         if child:IsA("Tool") and child.Name == "Gun" then
@@ -224,89 +221,47 @@ local function shootAtTarget(targetPlayer)
     local remote = tool:FindFirstChild("Shoot")
     if not remote or not remote:IsA("RemoteEvent") then return end
 
-    local targetChar = targetPlayer.Character
-    if not targetChar then return end
-    local head = targetChar:FindFirstChild("Head")
-    local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
+    -- Eğer daha önce hooklandıysa tekrar etme
+    if remote:GetAttribute("HookedForAimbot") then return end
+    remote:SetAttribute("HookedForAimbot", true)
 
-    remote:FireServer(targetPos)
-end
-
--- ////////////////////////////////////////////////
--- // DOKUNMA BÖLGESİ (Buton Yerine)
--- ////////////////////////////////////////////////
-local function createFireZone()
-    if fireZone then fireZone:Destroy() end
-
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "FireZoneGui"
-    gui.Parent = game.CoreGui or LocalPlayer:WaitForChild("PlayerGui")
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-    local zone = Instance.new("Frame")
-    zone.Name = "FireZone"
-    zone.Size = UDim2.new(0, 100, 0, 100)
-    zone.Position = UDim2.new(1, -120, 0.8, -60) -- Sağ alt
-    zone.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    zone.BackgroundTransparency = 0.6
-    zone.BorderSizePixel = 0
-    zone.Active = true
-    zone.Parent = gui
-    Instance.new("UICorner", zone).CornerRadius = UDim.new(0, 16)
-
-    -- Ateş yazısı
-    local label = Instance.new("TextLabel", zone)
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "ATEŞ"
-    label.TextColor3 = Color3.new(1,1,1)
-    label.Font = Enum.Font.SourceSansBold
-    label.TextSize = 20
-
-    -- Sürükleme için
-    local dragStart = nil
-    local startPos = nil
-    local moved = false
-
-    zone.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragStart = input.Position
-            startPos = zone.Position
-            moved = false
-        end
-    end)
-
-    zone.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragStart then
-            local delta = input.Position - dragStart
-            if delta.Magnitude > 5 then
-                moved = true
-                zone.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-        end
-    end)
-
-    -- Asıl önemli kısım: Dokunma bittiğinde eğer sürükleme olmadıysa ateş et
-    zone.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if not moved and cfg.aim_on then
-                local myRole = getPlayerRole(LocalPlayer)
-                if myRole ~= "Murderer" then
-                    local target = getClosestMurderer()
-                    if target then
-                        shootAtTarget(target)
+    local oldFireServer = remote.FireServer
+    remote.FireServer = function(self, ...)
+        local args = {...}
+        -- Eğer aimbot açıksa ve şerifsek, hedef pozisyonunu değiştir
+        if cfg.aim_on then
+            local myRole = getPlayerRole(LocalPlayer)
+            if myRole ~= "Murderer" then
+                local target = getClosestMurderer()
+                if target and target.Character then
+                    local head = target.Character:FindFirstChild("Head")
+                    local targetPos = head and head.Position or target.Character.HumanoidRootPart.Position
+                    -- Genelde ilk argüman hedef pozisyonudur
+                    if #args >= 1 and typeof(args[1]) == "Vector3" then
+                        args[1] = targetPos
                     end
                 end
             end
-            dragStart = nil
-            startPos = nil
-            moved = false
         end
-    end)
-
-    fireZone = zone
+        return oldFireServer(self, unpack(args))
+    end
 end
+
+-- Her karakter değiştiğinde yeniden hookla
+LocalPlayer.CharacterAdded:Connect(function(char)
+    -- Biraz bekle, silahın yüklenmesi için
+    task.wait(1)
+    hookWeaponRemote()
+end)
+
+-- Periyodik olarak kontrol et (silah sonradan alınabilir)
+task.spawn(function()
+    while task.wait(2) do
+        if cfg.aim_on then
+            hookWeaponRemote()
+        end
+    end
+end)
 
 -- ////////////////////////////////////////////////
 -- // MENÜ
@@ -339,7 +294,7 @@ local function createMenu()
     local title = Instance.new("TextLabel", frame)
     title.Size = UDim2.new(1, 0, 0, 25)
     title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    title.Text = "MM2 Silent Aim"
+    title.Text = "MM2 Oto Aimbot"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
 
@@ -364,9 +319,11 @@ local function createMenu()
     end
 
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
-    addToggle("Aimbot (Bölge)", cfg.aim_on, function(v)
+    addToggle("Aimbot (Oto)", cfg.aim_on, function(v)
         cfg.aim_on = v
-        if fireZone then fireZone.Visible = v end
+        if v then
+            hookWeaponRemote()
+        end
     end)
     addToggle("Takım Kontrol", cfg.team_check, function(v) cfg.team_check = v end)
 
@@ -386,10 +343,9 @@ Players.PlayerAdded:Connect(function(p)
 end)
 
 createMenu()
-createFireZone()
 
 RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("✅ MM2 ESP + Dokunma Bölgesi hazır! Sağ alttaki kırmızı 'ATEŞ' alanına dokun, mermi gitsin.")
+print("✅ MM2 ESP + Oto Silent Aim hazır! Aimbot'u aç, normal şekilde ateş et, mermi katile gitsin.")
