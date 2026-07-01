@@ -1,4 +1,4 @@
--- // Delta Mobil – MM2 ESP + Sürekli Aimbot (Butonsuz, Kamerayı ve RootPart'ı Kilitler)
+-- // Delta Mobil – MM2 ESP + Göğüs Aimbot (RootPart Hedefli, Daha İsabetli)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
@@ -166,7 +166,7 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // AIMBOT (Sürekli, kamera + karakter dönüşü)
+-- // AIMBOT (Göğüs hizası = HumanoidRootPart)
 -- ////////////////////////////////////////////////
 local function getClosestMurderer()
     local best = nil
@@ -183,7 +183,8 @@ local function getClosestMurderer()
         local head = char:FindFirstChild("Head")
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not (head or hrp) then continue end
-        local targetPos = head and head.Position or hrp.Position
+        -- Mesafe hesabı için hrp kullan
+        local targetPos = hrp and hrp.Position or head.Position
         local dist = (myPos - targetPos).Magnitude
         if dist < bestDist then
             bestDist = dist
@@ -197,25 +198,28 @@ local function updateAimbot()
     if not cfg.aim_on then return end
 
     local myRole = getPlayerRole(LocalPlayer)
-    if myRole == "Murderer" then return end  -- Katil aimbot kullanmasın
+    if myRole == "Murderer" then return end
 
     local target = getClosestMurderer()
     if not target or not target.Character then return end
 
     local targetChar = target.Character
-    local head = targetChar:FindFirstChild("Head")
-    local targetPos = head and head.Position or targetChar.HumanoidRootPart.Position
+    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- GÖĞÜS HİZASI: RootPart pozisyonu (tam gövde ortası)
+    local targetPos = hrp.Position + Vector3.new(0, 1, 0)  -- Hafif yukarı, göğüs ortası
     local camPos = Camera.CFrame.Position
 
     -- Kamera kilidi (yumuşak)
     local lookAtCFrame = CFrame.lookAt(camPos, targetPos)
-    Camera.CFrame = Camera.CFrame:Lerp(lookAtCFrame, 0.3)  -- yumuşak geçiş
+    Camera.CFrame = Camera.CFrame:Lerp(lookAtCFrame, 0.3)
 
     -- Karakter RootPart'ını yatay olarak hedefe döndür
     local myChar = LocalPlayer.Character
     if myChar and myChar:FindFirstChild("HumanoidRootPart") then
         local root = myChar.HumanoidRootPart
-        local flatTarget = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)  -- aynı yükseklikte
+        local flatTarget = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
         local rootLookAt = CFrame.lookAt(root.Position, flatTarget)
         pcall(function()
             root.CFrame = root.CFrame:Lerp(rootLookAt, 0.4)
@@ -279,7 +283,7 @@ local function createMenu()
     end
 
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
-    addToggle("Aimbot (Kilit)", cfg.aim_on, function(v) cfg.aim_on = v end)
+    addToggle("Aimbot (Göğüs)", cfg.aim_on, function(v) cfg.aim_on = v end)
     addToggle("Takım Kontrol", cfg.team_check, function(v) cfg.team_check = v end)
 
     openBtn.MouseButton1Click:Connect(function()
@@ -304,4 +308,4 @@ RunService.RenderStepped:Connect(function()
     updateAimbot()
 end)
 
-print("✅ MM2 ESP + Sürekli Aimbot hazır. Menüden aç, kamera direkt katile kitlensin.")
+print("✅ MM2 ESP + Göğüs Aimbot hazır. Menüden 'Aimbot (Göğüs)' seçeneğini aç.")
