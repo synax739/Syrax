@@ -1,6 +1,7 @@
--- // Delta Mobil – MM2 ESP + Silent Aim (Buton Tamiri)
+-- // Delta Mobil – MM2 ESP + Dokunma Bölgesi (Buton Sorunu Kesin Çözüm)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -15,6 +16,9 @@ local cfg = {
     aim_maxDist = 120,
     team_check = false
 }
+
+-- Ateş bölgesi (sağ alt köşe)
+local fireZone = nil
 
 -- Rol renkleri
 local ROLE_COLORS = {
@@ -166,7 +170,7 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // SILENT AIM
+-- // SILENT AIM (Doğrudan Remote)
 -- ////////////////////////////////////////////////
 local function getClosestMurderer()
     local best = nil
@@ -197,7 +201,6 @@ local function shootAtTarget(targetPlayer)
     local myChar = LocalPlayer.Character
     if not myChar then return end
 
-    -- Silahı bul
     local tool = nil
     for _, child in ipairs(myChar:GetChildren()) do
         if child:IsA("Tool") and child.Name == "Gun" then
@@ -230,87 +233,79 @@ local function shootAtTarget(targetPlayer)
 end
 
 -- ////////////////////////////////////////////////
--- // BUTON (InputBegan/InputEnded, tap algılama)
+-- // DOKUNMA BÖLGESİ (Buton Yerine)
 -- ////////////////////////////////////////////////
-local aimButton = nil
-
-local function createAimButton()
-    if aimButton then aimButton:Destroy() end
+local function createFireZone()
+    if fireZone then fireZone:Destroy() end
 
     local gui = Instance.new("ScreenGui")
-    gui.Name = "AimButtonGui"
+    gui.Name = "FireZoneGui"
     gui.Parent = game.CoreGui or LocalPlayer:WaitForChild("PlayerGui")
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 90, 0, 90)
-    btn.Position = UDim2.new(0.5, -45, 0.7, 0)
-    btn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    btn.BackgroundTransparency = 0.5
-    btn.Text = "🎯"
-    btn.TextColor3 = Color3.new(1,1,1)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 36
-    btn.Active = true  -- Input alabilmesi için şart
-    btn.Parent = gui
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    local zone = Instance.new("Frame")
+    zone.Name = "FireZone"
+    zone.Size = UDim2.new(0, 100, 0, 100)
+    zone.Position = UDim2.new(1, -120, 0.8, -60) -- Sağ alt
+    zone.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    zone.BackgroundTransparency = 0.6
+    zone.BorderSizePixel = 0
+    zone.Active = true
+    zone.Parent = gui
+    Instance.new("UICorner", zone).CornerRadius = UDim.new(0, 16)
 
-    -- Sürükleme / tap verileri
-    local touchStartTime = 0
-    local touchStartPos = Vector2.new(0,0)
-    local startBtnPos = nil
+    -- Ateş yazısı
+    local label = Instance.new("TextLabel", zone)
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "ATEŞ"
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Font = Enum.Font.SourceSansBold
+    label.TextSize = 20
+
+    -- Sürükleme için
+    local dragStart = nil
+    local startPos = nil
     local moved = false
 
-    btn.InputBegan:Connect(function(input)
+    zone.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            touchStartTime = tick()
-            touchStartPos = input.Position
-            startBtnPos = btn.Position
+            dragStart = input.Position
+            startPos = zone.Position
             moved = false
         end
     end)
 
-    btn.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            if startBtnPos then
-                local delta = input.Position - touchStartPos
-                if delta.Magnitude > 5 then  -- 5 piksel sürüklenme eşiği
-                    moved = true
-                    btn.Position = UDim2.new(
-                        startBtnPos.X.Scale,
-                        startBtnPos.X.Offset + delta.X,
-                        startBtnPos.Y.Scale,
-                        startBtnPos.Y.Offset + delta.Y
-                    )
-                end
+    zone.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragStart then
+            local delta = input.Position - dragStart
+            if delta.Magnitude > 5 then
+                moved = true
+                zone.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             end
         end
     end)
 
-    btn.InputEnded:Connect(function(input)
+    -- Asıl önemli kısım: Dokunma bittiğinde eğer sürükleme olmadıysa ateş et
+    zone.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local duration = tick() - touchStartTime
-            if not moved and duration < 0.4 then  -- 0.4 saniyeden kısa ve sürükleme yoksa TAP
-                if cfg.aim_on then
-                    local myRole = getPlayerRole(LocalPlayer)
-                    if myRole ~= "Murderer" then
-                        local target = getClosestMurderer()
-                        if target then
-                            shootAtTarget(target)
-                        end
+            if not moved and cfg.aim_on then
+                local myRole = getPlayerRole(LocalPlayer)
+                if myRole ~= "Murderer" then
+                    local target = getClosestMurderer()
+                    if target then
+                        shootAtTarget(target)
                     end
                 end
             end
-            -- sıfırla
-            touchStartTime = 0
-            touchStartPos = Vector2.new(0,0)
-            startBtnPos = nil
+            dragStart = nil
+            startPos = nil
             moved = false
         end
     end)
 
-    aimButton = btn
+    fireZone = zone
 end
 
 -- ////////////////////////////////////////////////
@@ -369,9 +364,9 @@ local function createMenu()
     end
 
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
-    addToggle("Aimbot (🎯)", cfg.aim_on, function(v)
+    addToggle("Aimbot (Bölge)", cfg.aim_on, function(v)
         cfg.aim_on = v
-        if aimButton then aimButton.Visible = v end
+        if fireZone then fireZone.Visible = v end
     end)
     addToggle("Takım Kontrol", cfg.team_check, function(v) cfg.team_check = v end)
 
@@ -391,10 +386,10 @@ Players.PlayerAdded:Connect(function(p)
 end)
 
 createMenu()
-createAimButton()
+createFireZone()
 
 RunService.RenderStepped:Connect(function()
     updateESP()
 end)
 
-print("✅ MM2 ESP + Silent Aim hazır. 🎯 butonuna dokunup bırak, ateş etsin!")
+print("✅ MM2 ESP + Dokunma Bölgesi hazır! Sağ alttaki kırmızı 'ATEŞ' alanına dokun, mermi gitsin.")
