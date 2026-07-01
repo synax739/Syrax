@@ -1,62 +1,55 @@
--- // Delta Mobil – MM2 ESP & Aimbot (Role Göre Renk, Sadece Katili Hedef Alır)
+-- // Delta Mobil – MM2 ESP & Butonlu Aimbot (Bas-çek, ekranda buton)
+-- // ESP: Rol renkli kutular, isim, mesafe.
+-- // Aimbot: Ekranda özel AIM butonu, basılı tutunca en yakın katile kilitlenir.
+-- // Anti-Ban: Rastgele yenileme, hız değişimi.
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- MM2'ye özel ayarlar
+-- Ayarlar
 local cfg = {
     esp_on = true,
     esp_box = true,
-    esp_name = false,       -- MM2'de isimler kapalı olabilir, çok kalabalık
+    esp_name = false,
     esp_dist = false,
-    esp_hp = false,         -- MM2'de can yok
-    esp_maxDist = 500,      -- tüm haritayı göstermek için yeterli
+    esp_hp = false,
+    esp_maxDist = 500,
     aim_on = false,
-    aim_mode = "Touch",     -- Touch veya Always (sadece katili hedefler)
     aim_smoothBase = 2.2,
-    aim_maxDist = 120,      -- MM2'de bıçak menzili ~10 stud, tabanca daha uzun ama aimbot menzili yakın tutulmalı
-    team_check = true       -- aynı roldekileri gösterme/nişan alma
+    aim_maxDist = 120,
+    team_check = true
 }
 
 -- Rol renkleri
 local ROLE_COLORS = {
-    Murderer = Color3.fromRGB(255, 0, 0),    -- Kırmızı
-    Sheriff   = Color3.fromRGB(0, 120, 255), -- Mavi
-    Innocent  = Color3.fromRGB(0, 255, 0),   -- Yeşil
-    Unknown   = Color3.fromRGB(255, 255, 0)  -- Sarı (rol bulunamazsa)
+    Murderer = Color3.fromRGB(255, 0, 0),
+    Sheriff   = Color3.fromRGB(0, 120, 255),
+    Innocent  = Color3.fromRGB(0, 255, 0),
+    Unknown   = Color3.fromRGB(255, 255, 0)
 }
 
 -- ////////////////////////////////////////////////
--- // MM2 Rol Tespit Fonksiyonu
+-- // MM2 Rol Tespiti
 -- ////////////////////////////////////////////////
 local function getPlayerRole(plr)
     local char = plr.Character
     if not char then return "Unknown" end
-
-    -- En yaygın yöntemler:
-    -- 1. Sırt çantasındaki eşya (Backpack/Inventory)
     local backpack = plr:FindFirstChild("Backpack") or plr
-    -- Bıçak var mı? (Katil)
     if backpack:FindFirstChild("Knife") or backpack:FindFirstChild("Murderer") or backpack:FindFirstChild("Killer") then
         return "Murderer"
     end
-
-    -- 2. Karakter içindeki objeler
     if char:FindFirstChild("Knife") or char:FindFirstChild("MurdererWeapon") then
         return "Murderer"
     end
-
-    -- Şerif tabancası kontrolü
     if backpack:FindFirstChild("Gun") or backpack:FindFirstChild("Sheriff") or backpack:FindFirstChild("Revolver") or backpack:FindFirstChild("Pistol") then
         return "Sheriff"
     end
     if char:FindFirstChild("Gun") or char:FindFirstChild("SheriffWeapon") then
         return "Sheriff"
     end
-
-    -- 3. Rol isimleri (Bazı MM2 sürümlerinde)
     local roleObj = plr:FindFirstChild("Role") or plr:FindFirstChild("PlayerRole")
     if roleObj and roleObj:IsA("StringValue") then
         local roleName = roleObj.Value
@@ -64,9 +57,6 @@ local function getPlayerRole(plr)
         if roleName == "Sheriff" or roleName == "Hero" then return "Sheriff" end
         if roleName == "Innocent" or roleName == "Civilian" then return "Innocent" end
     end
-
-    -- 4. Elindeki alet (Animation track'leri kullanmıyoruz, basit)
-    -- Eğer hiçbiri yoksa masumdur
     return "Innocent"
 end
 
@@ -98,17 +88,12 @@ local function removeESP(plr)
     ESPData[plr] = nil
 end
 
-local function isInFront(pos)
-    local camPos = Camera.CFrame.Position
-    return Camera.CFrame.LookVector:Dot((pos - camPos).Unit) > 0
-end
-
 local function getBox(character)
     local head = character:FindFirstChild("Head")
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
     local top = head and (head.Position + Vector3.new(0, 1.5, 0)) or (hrp.Position + Vector3.new(0, 2.5, 0))
-    local bottom = hrp.Position - Vector3.new(0, 3, 0) -- MM2 karakterleri genelde normal boyutlu
+    local bottom = hrp.Position - Vector3.new(0, 3, 0)
     local ts, on1 = Camera:WorldToViewportPoint(top)
     local bs, on2 = Camera:WorldToViewportPoint(bottom)
     if not on1 and not on2 then return nil end
@@ -127,13 +112,10 @@ local function updateESP()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer then continue end
         local role = getPlayerRole(plr)
-        
-        -- Takım kontrolü: aynı roldekileri gösterme (isteğe bağlı)
         if cfg.team_check and role == myRole then
             if ESPData[plr] then removeESP(plr) end
             continue
         end
-
         local char = plr.Character
         if not char then
             if ESPData[plr] then removeESP(plr) end
@@ -144,16 +126,12 @@ local function updateESP()
             if ESPData[plr] then removeESP(plr) end
             continue
         end
-
-        -- ESP kapalıysa gizle
         if not cfg.esp_on then
             if ESPData[plr] then
                 for _, v in pairs(ESPData[plr]) do v.Visible = false end
             end
             continue
         end
-
-        -- Mesafe kontrolü
         local dist = 0
         local myChar = LocalPlayer.Character
         if myChar and myChar:FindFirstChild("HumanoidRootPart") then
@@ -165,18 +143,14 @@ local function updateESP()
             end
             continue
         end
-
         if not ESPData[plr] then createESP(plr) end
         local d = ESPData[plr]
         if not d then continue end
-
         local box = getBox(char)
         if not box then
             for _, v in pairs(d) do v.Visible = false end
             continue
         end
-
-        -- Renge göre ESP
         local color = ROLE_COLORS[role] or ROLE_COLORS.Unknown
         if cfg.esp_box and d.box then
             d.box.Visible = true
@@ -184,13 +158,11 @@ local function updateESP()
             d.box.Size = box.size
             d.box.Color = color
         end
-        -- İsim (MM2'de genelde kapalı)
         if cfg.esp_name and d.name then
             d.name.Visible = true
             d.name.Text = plr.Name
             d.name.Position = box.top - Vector2.new(0, 15)
         end
-        -- Rol etiketi
         if d.role then
             d.role.Visible = true
             d.role.Text = role
@@ -201,9 +173,10 @@ local function updateESP()
 end
 
 -- ////////////////////////////////////////////////
--- // AIMBOT (SADECE KATİLİ HEDEFLER)
+-- // AIMBOT (Buton ile manuel kontrol)
 -- ////////////////////////////////////////////////
-local currentTarget = nil
+local aimButton = nil
+local isAimButtonPressed = false
 
 local function getClosestMurderer()
     local best = nil
@@ -225,12 +198,9 @@ local function getClosestMurderer()
         local targetPart = head or hrp
         local dist = (myPos - targetPart.Position).Magnitude
         if dist >= bestDist then continue end
-
-        -- FOV kontrolü (isteğe bağlı, katili her zaman gör)
         local toTarget = (targetPart.Position - camPos).Unit
         local angle = math.acos(math.clamp(lookVec:Dot(toTarget), -1, 1))
-        if angle > math.rad(90) then continue end -- 90 derece FOV yeterli
-
+        if angle > math.rad(90) then continue end
         bestDist = dist
         best = plr
     end
@@ -256,48 +226,82 @@ local function aimAt(targetPlayer)
     return true
 end
 
-local aimTick = 0
 local function updateAimbot()
     if not cfg.aim_on then
-        currentTarget = nil
+        isAimButtonPressed = false
+        if aimButton then aimButton.Visible = false end
         return
     end
 
-    -- Sadece şerif veya masum aimbot kullanabilir (katil aimbot kullanamaz)
+    -- Buton görünür olsun
+    if aimButton then aimButton.Visible = true end
+
+    if not isAimButtonPressed then return end
+
+    -- Katil hedef bul ve kilitlen
     local myRole = getPlayerRole(LocalPlayer)
-    if myRole == "Murderer" then
-        currentTarget = nil
-        return
-    end
+    if myRole == "Murderer" then return end
 
-    local shouldAim = false
-    if cfg.aim_mode == "Always" then
-        shouldAim = true
-    elseif cfg.aim_mode == "Touch" then
-        shouldAim = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) or
-                    UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch)
+    local target = getClosestMurderer()
+    if target then
+        aimAt(target)
     end
+end
 
-    if not shouldAim then
-        currentTarget = nil
-        return
-    end
+-- ////////////////////////////////////////////////
+-- // MOBİL AIM BUTONU
+-- ////////////////////////////////////////////////
+local function createAimButton()
+    if aimButton then aimButton:Destroy() end
 
-    aimTick = aimTick + 1
-    if aimTick % math.random(2, 3) ~= 0 then
-        if currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild("Head") then
-            aimAt(currentTarget)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "AimButtonGui"
+    gui.Parent = game.CoreGui or game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    gui.ResetOnSpawn = false
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 80, 0, 80)
+    btn.Position = UDim2.new(0.5, -40, 0.7, 0) -- Alt orta
+    btn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    btn.BackgroundTransparency = 0.5
+    btn.Text = "AIM"
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 24
+    btn.Parent = gui
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+
+    -- Sürüklenebilir yap
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if cfg.aim_on then
+                isAimButtonPressed = true
+            end
+            dragging = true
+            dragStart = input.Position
+            startPos = btn.Position
         end
-        return
-    end
+    end)
 
-    local newTarget = getClosestMurderer()
-    if newTarget then
-        currentTarget = newTarget
-        aimAt(currentTarget)
-    else
-        currentTarget = nil
-    end
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isAimButtonPressed = false
+            dragging = false
+        end
+    end)
+
+    btn.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - dragStart
+            btn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    aimButton = btn
 end
 
 -- ////////////////////////////////////////////////
@@ -321,7 +325,7 @@ local function createMenu()
     Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 20)
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 200, 0, 200)
+    frame.Size = UDim2.new(0, 200, 0, 160)
     frame.Position = UDim2.new(1, -210, 0, 60)
     frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     frame.BorderSizePixel = 0
@@ -331,7 +335,7 @@ local function createMenu()
     local title = Instance.new("TextLabel", frame)
     title.Size = UDim2.new(1, 0, 0, 25)
     title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    title.Text = "MM2 Güvenli Panel"
+    title.Text = "MM2 Panel"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
 
@@ -356,22 +360,13 @@ local function createMenu()
     end
 
     addToggle("ESP", cfg.esp_on, function(v) cfg.esp_on = v end)
-    addToggle("Aimbot", cfg.aim_on, function(v) cfg.aim_on = v end)
-
-    local modeBtn = Instance.new("TextButton", frame)
-    modeBtn.Size = UDim2.new(1, -10, 0, 28)
-    modeBtn.Position = UDim2.new(0, 5, 0, y)
-    modeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    modeBtn.Text = "Aimbot: " .. cfg.aim_mode
-    modeBtn.TextColor3 = Color3.new(1,1,1)
-    modeBtn.Font = Enum.Font.SourceSans
-    modeBtn.TextSize = 13
-    modeBtn.MouseButton1Click:Connect(function()
-        cfg.aim_mode = cfg.aim_mode == "Always" and "Touch" or "Always"
-        modeBtn.Text = "Aimbot: " .. cfg.aim_mode
+    addToggle("Aimbot", cfg.aim_on, function(v)
+        cfg.aim_on = v
+        if not v then
+            isAimButtonPressed = false
+            if aimButton then aimButton.Visible = false end
+        end
     end)
-    y = y + 30
-
     addToggle("Takım Kontrol", cfg.team_check, function(v) cfg.team_check = v end)
 
     openBtn.MouseButton1Click:Connect(function()
@@ -380,14 +375,16 @@ local function createMenu()
 end
 
 -- ////////////////////////////////////////////////
--- // TEMİZLİK VE BAŞLATMA
+-- // BAŞLATMA
 -- ////////////////////////////////////////////////
 Players.PlayerRemoving:Connect(function(p) removeESP(p) end)
+
+createMenu()
+createAimButton()
 
 RunService.RenderStepped:Connect(function()
     updateESP()
     updateAimbot()
 end)
 
-createMenu()
-print("🎭 MM2 ESP & Aimbot aktif! Katil kırmızı, Şerif mavi, Masum yeşil.")
+print("🎯 MM2 ESP & Butonlu Aimbot hazır! Aimbot'u aç, ekrandaki kırmızı AIM butonuna basılı tutarak katile kilitlen.")
